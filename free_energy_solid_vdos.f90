@@ -12,16 +12,19 @@ character(:), allocatable:: command_line,argument
 integer i, j, npts, natom
 real*8 k_B,h,T,P,dos,w_A,w_S,w_E,w_ZP,x,v,v1,v2,hv,kBT,n,Lx,Ly,Lz,E
 real*8 dosXw_A(:),dosXw_S(:),dosXw_E(:),dosXw_ZP(:)
+real*8 WCor_A(:),WCor_S(:),WCor_E(:)
+real*8 dosWCor_A(:),dosWCor_S(:),dosWCor_E(:)
+real*8 int_dosWCor_A(:),int_dosWCor_S(:),int_dosWCor_E(:)
 real*8 int_dosXw_A,int_dosXw_S,int_dosXw_E,int_dosXw_ZP
+real*8 CorE,CorAH,CorS
 real*8 vol,q,enth,G,sum_1,sum_2,sum_3,D,sum_4
-real*8 alat,ax,ay,az,bx,by,bz,cx,cy,cz
 character*12 fdos, fpos
-! This is joule per kelvin so SI1.6021764
+! This is joule per kelvin so SI 1.6021764
 ! q is conversion from J to eV
 
 parameter (k_B=1.3806503E-23,h=6.626068E-34,q=1.60217646E-19)  
 parameter (eV2Hartrees=0.0367493090027428)
-allocatable :: dosXw_A,dosXw_S,dosXw_E,dosXw_ZP,
+allocatable :: dosXw_A,dosXw_S,dosXw_E,dosXw_ZP,dosWCor_A,dosWCor_S,dosWCor_E
 
 ! Retrieve user input
 !inputfile is VDOS.dat and is normalized to 3N write(*,*) "name of VDOS.dat file in THZ normalized to 3N:"
@@ -95,7 +98,7 @@ REWIND (10)
 
 ! Allocate arrays accordingly
 allocate(dosXw_A(npts),dosXw_S(npts),dosXw_E(npts))mdosXw_ZP(npts))
-
+allocate(dosWCor_A(npts),dosWCor_S(npts),dosWCor_E(npts))
 ! Do the calculation
 kBT = k_B*T
 do i = 1, npts
@@ -105,20 +108,28 @@ do i = 1, npts
   hv = h*v*1.0E+12
   x= hv/KBT
   w_A = -dlog(dexp(-x/2.0d0)/(1.0d0-dexp(-x)))
+  WCor_A = w_A - log(x)
   W_S = x/(dexp(x)-1.0d0)-log(1.0d0-dexp(-x))
+  WCor_S = w_S + log(x) - 1d0
   w_E = x/2.0d0 + x/(dexp(x)-1.0d0)
+  WCor_E = w_E - 1d0
   w_ZP = x/2.0d0
   if (v==0.0d0) then
     dosXw_A(i) = 0.0d0
     dosXw_S(i) = 0.0d0
     dosXw_E(i) = 0.0d0
     dosXw_ZP(i) = 0.0d0
-  else
+    dosWcor_A(i) = 0.0d0
+    dosWcor_S(i) = 0.0d0
+    dosWcor_E(i) = 0.0d0
+ else
    dosXw_A(i) = dos*w_A
    dosXw_S(i) = dos*w_S
    dosXw_E(i) = dos*w_E
    dosXw_ZP(i) = dos*w_ZP
-   CHECK UNITS!
+   dosWcor_A(i) = dos*Wcor_A
+   dosWcor_S(i) = dos*Wcor_S
+   dosWcor_E(i) = dos*Wcor_E
   endif
 enddo 
 close(10)
@@ -127,12 +138,18 @@ sum_1=dosXw_A(1)+dosXw_A(npts)
 sum_2=dosXw_S(1)+dosXw_S(npts)
 sum_3=dosXw_E(1)+dosXw_E(npts)
 sum_4=dosXw_ZP(1)+dosXw_ZP(npts)
+sum_5=dosWcor_A(1)+dosWcor_A(npts)
+sum_6=dosWcor_S(1)+dosWcor_S(npts)
+sum_7=dosWcor_E(1)+dosWcor_E(npts)
 D=4.0d0
 do i = 2,npts-1
    sum_1 = sum_1 + D*dosXw_A(i)
    sum_2 = sum_2 + D*dosXw_S(i)
    sum_3 = sum_3 + D*dosXw_E(i)
    sum_4 = sum_4 + D*dosXw_ZP(i)
+   sum_5 = sum_5 + D*dosWcor_A(i)
+   sum_6 = sum_6 + D*dosWcor_S(i)
+   sum_7 = sum_7 + D*dosWcor_E(i)
    D=6.0d0-D
 enddo
 
@@ -140,7 +157,9 @@ int_dosXw_A=sum_1*(v2-v1)/3.0d0
 int_dosXw_S=sum_2*(v2-v1)/3.0d0
 int_dosXw_E=sum_3*(v2-v1)/3.0d0
 int_dosXw_ZP=sum_4*(v2-v1)/3.0d0
-
+int_dosWcor_A=sum_5*(v2-v1)/3.0d0
+int_dosWcor_S=sum_6*(v2-v1)/3.0d0
+int_dosWcor_E=sum_7*(v2-v1)/3.0d0
 kBT = kBT/q
 
 ! Print the results to screen
@@ -158,7 +177,7 @@ write(*,*) "Zero Point Energy per atom in eV:", int_dosXw_ZP/dfloat(natom)/kbT
 write(*,*) "Zero Point Energy per atom in H:", int_dosXw_ZP/dfloat(natom)/kbT*ev2Hartree
 write(*,*) "Zero Point Energy per cell in eV:", int_dosXw_ZP/kbT
 write(*,*) "Zero Point Energy per cell in H:", int_dosXw_ZP/kbT*ev2Hartree
-write(*,*) "Internal Energy per atom in eV:", int_dosXw_E/dfloat(natom)/kbT
+write(*,*) "Internal Energy per atom in eV:", int_dosXw_E/dfloat(natom)/kbT CHECK
 write(*,*) "Internal Energy per atom in H:", int_dosXw_E/dfloat(natom)/kbT*ev2Hartree
 write(*,*) "Internal Energy per cell in eV:", int_dosXw_E/kbT
 write(*,*) "Internal Energy per cell in H:", int_dosXw_E/kbT*ev2Hartree
@@ -166,30 +185,33 @@ write(*,*) "Free Energy per atom in eV:", int_dosXw_E/dfloat(natom)/kbT
 write(*,*) "Free Energy per atom in H:", int_dosXw_E/dfloat(natom)/kbT*ev2Hartree
 write(*,*) "Free Energy per cell in eV:", int_dosXw_E/kbT
 write(*,*) "Free Energy per cell in H:", int_dosXw_E/kbT*ev2Hartree
+! quantum corrections to classical MD
+write(*,*)' Quantum corrections to classical MD. H/cell: E, A(H), S '
+write(*,*)int_dosWcor_E*kbT*ev2Hartree,int_dosWcor_A*kbT*ev2Hartree,int_dosWcor_S*8.617343d-05*ev2Hartree
 ! Just numbers to file (what for?)
-write(*,*)&
-&int_dosXw_S/dfloat(natom),&
-&int_dosXw_S/dfloat(natom)*8.617343d-05,&
-&int_dosXw_S/dfloat(natom)*8.617343d-05*ev2Hartrees,&
-&int_dosXw_S,&
-&int_dosXw_S*8.617343d-05,&
-&int_dosXw_S*8.617343d-05*ev2Hartrees,&
-&T*int_dosXw_S/dfloat(natom)*8.617343d-05,&
-&T*int_dosXw_S/dfloat(natom)*8.617343d-05*ev2Hart,&
-&T*int_dosXw_S*8.617343d-05,&
-&T*int_dosXw_S*8.617343d-05*ev2Hartrees,&
-&int_dosXw_ZP/dfloat(natom)/kbT,&
-&int_dosXw_ZP/dfloat(natom)/kbT*ev2Hartree,&
-&int_dosXw_ZP/kbT,&
-&int_dosXw_ZP/kbT*ev2Hartree,&
-&int_dosXw_E/dfloat(natom)/kbT,&
-&int_dosXw_E/dfloat(natom)/kbT*ev2Hartree,&
-&int_dosXw_E/kbT,&
-&int_dosXw_E/kbT*ev2Hartree,&
-&int_dosXw_E/dfloat(natom)/kbT,&
-&int_dosXw_E/dfloat(natom)/kbT*ev2Hartree,&
-&int_dosXw_E/kbT,&
-&int_dosXw_E/kbT*ev2Hartree
+! write(*,*)&
+! &int_dosXw_S/dfloat(natom),&
+! &int_dosXw_S/dfloat(natom)*8.617343d-05,&
+! &int_dosXw_S/dfloat(natom)*8.617343d-05*ev2Hartrees,&
+! &int_dosXw_S,&
+! &int_dosXw_S*8.617343d-05,&
+! &int_dosXw_S*8.617343d-05*ev2Hartrees,&
+! &T*int_dosXw_S/dfloat(natom)*8.617343d-05,&
+! &T*int_dosXw_S/dfloat(natom)*8.617343d-05*ev2Hart,&
+! &T*int_dosXw_S*8.617343d-05,&
+! &T*int_dosXw_S*8.617343d-05*ev2Hartrees,&
+! &int_dosXw_ZP/dfloat(natom)/kbT,&
+! &int_dosXw_ZP/dfloat(natom)/kbT*ev2Hartree,&
+! &int_dosXw_ZP/kbT,&
+! &int_dosXw_ZP/kbT*ev2Hartree,&
+! &int_dosXw_E/dfloat(natom)/kbT,&
+! &int_dosXw_E/dfloat(natom)/kbT*ev2Hartree,&
+! &int_dosXw_E/kbT,&
+! &int_dosXw_E/kbT*ev2Hartree,&
+! &int_dosXw_E/dfloat(natom)/kbT,&
+! &int_dosXw_E/dfloat(natom)/kbT*ev2Hartree,&
+! &int_dosXw_E/kbT,&
+! &int_dosXw_E/kbT*ev2Hartree
 
 
 
