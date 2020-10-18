@@ -1,7 +1,6 @@
 ! gibbs-solid.f90
 ! Brian's modified version of Amanuel's code
-
-implicit none
+! modified heavily by Ronald E. Cohen
 implicit none
 INTEGER :: status
 integer :: ierr,arguments,iarg,l
@@ -11,28 +10,22 @@ character(:), allocatable:: command_line,argument
 
 integer i, j, npts, natom
 real*8 k_B,h,T,P,dos,w_A,w_S,w_E,w_ZP,x,v,v1,v2,hv,kBT,n,Lx,Ly,Lz,E
-real*8 dosXw_A(:),dosXw_S(:),dosXw_E(:),dosXw_ZP(:)
-real*8 WCor_A(:),WCor_S(:),WCor_E(:)
-real*8 dosWCor_A(:),dosWCor_S(:),dosWCor_E(:)
-real*8 int_dosWCor_A(:),int_dosWCor_S(:),int_dosWCor_E(:)
+real*8, allocatable :: dosXw_A(:),dosXw_S(:),dosXw_E(:),dosXw_ZP(:)
+real*8 :: WCor_A,WCor_S,WCor_E
+real*8, allocatable :: dosWCor_A(:),dosWCor_S(:),dosWCor_E(:)
+real*8 int_dosWCor_A,int_dosWCor_S,int_dosWCor_E
 real*8 int_dosXw_A,int_dosXw_S,int_dosXw_E,int_dosXw_ZP
-real*8 CorE,CorAH,CorS
-real*8 vol,q,enth,G,sum_1,sum_2,sum_3,D,sum_4
+real*8 CorE,CorAH,CorS,eV2Hartrees,kBeV
+real*8 q,enth,G,sum_1,sum_2,sum_3,D,sum_4,sum_5,sum_6,sum_7
 character*12 fdos, fpos
 ! This is joule per kelvin so SI 1.6021764
 ! q is conversion from J to eV
 
-parameter (k_B=1.3806503E-23,h=6.626068E-34,q=1.60217646E-19)  
+parameter (k_B=1.380649e-23,h=6.626070E-34,q=1.60217646E-19)  
+!kB J/K h Js 
 parameter (eV2Hartrees=0.0367493090027428)
-allocatable :: dosXw_A,dosXw_S,dosXw_E,dosXw_ZP,dosWCor_A,dosWCor_S,dosWCor_E
-
-! Retrieve user input
+parameter (kBeV=8.617333262145e-5)
 !inputfile is VDOS.dat and is normalized to 3N write(*,*) "name of VDOS.dat file in THZ normalized to 3N:"
-!read(*,*) fdos
-!write(*,*) "name of POSCAR file for volume calculation:"
-!read(*,*) fpos
-!write(*,*) "temperature in K:"
-!read(*,*) T
 
 ! read command line arguments
 arguments=COMMAND_ARGUMENT_COUNT()
@@ -66,28 +59,19 @@ IF (arguments /= 0) THEN
             END IF
             READ (argument, *) natom
             write(*,*)' Atoms per cell:',natom
-         case("-v") !volume
-            CALL GET_COMMAND_ARGUMENT(iarg+1, LENGTH=l, STATUS=status)
-            if(allocated(argument))deallocate(argument)
-            ALLOCATE(CHARACTER(l) :: argument)
-            CALL GET_COMMAND_ARGUMENT(iarg+1, VALUE=argument, STATUS=status)
-            IF (status /= 0) THEN
-               STOP 'Sorry, but GET_COMMAND_ARGUMENT failed unexpectedly'
-            END IF
-            READ (argument, *) vol
-            write(*,*)' Cell Volume au:',vol
          case default
-            write(*,*)' free_energy_solid_vdos -n natomsPerCell -v cellvolume_au -t temperature_K'
+            write(*,*)' free_energy_solid_vdos -n natomsPerCell -t temperature_K'
             stop 'usage'
          end select
       enddo
    else
       write(*,*)' Command line input required. Type -h for help'
+      stop 'input'
    endif
 
 
 
-! Determine size of VDOS file
+! Determine size of VDOS file, 3 columns. Column 2 Freq THz. Col3 VDOS normalized to 3N
 open(10,file='VDOS.dat',status='old')
 npts=0
 100 read(10,*,END=200) 
@@ -97,7 +81,7 @@ goto 100
 REWIND (10)
 
 ! Allocate arrays accordingly
-allocate(dosXw_A(npts),dosXw_S(npts),dosXw_E(npts))mdosXw_ZP(npts))
+allocate(dosXw_A(npts),dosXw_S(npts),dosXw_E(npts),dosXw_ZP(npts))
 allocate(dosWCor_A(npts),dosWCor_S(npts),dosWCor_E(npts))
 ! Do the calculation
 kBT = k_B*T
@@ -164,54 +148,38 @@ kBT = kBT/q
 
 ! Print the results to screen
 write(*,*) "Entropy per atom in k_B:", int_dosXw_S/dfloat(natom)
-write(*,*) "Entropy per atom in eV/K:", int_dosXw_S/dfloat(natom)*8.617343d-05
-write(*,*) "Entropy per atom in H/K:", int_dosXw_S/dfloat(natom)*8.617343d-05*ev2Hartrees
+write(*,*) "Entropy per atom in eV/K:", int_dosXw_S/dfloat(natom)&
+     &*kBeV
+write(*,*) "Entropy per atom in H/K:", int_dosXw_S/dfloat(natom)&
+     &*kBeV*ev2Hartrees 
 write(*,*) "Entropy per cell in k_B:", int_dosXw_S
-write(*,*) "Entropy per cell in eV/K:", int_dosXw_S*8.617343d-05
-write(*,*) "Entropy per cell in H/K:", int_dosXw_S*8.617343d-05*ev2Hartrees
-write(*,*) "TS per atom in eV:", T*int_dosXw_S/dfloat(natom)*8.617343d-05
-write(*,*) "TS per atom in H:", T*int_dosXw_S/dfloat(natom)*8.617343d-05*ev2Hart
-write(*,*) "TS per cell in eV:", T*int_dosXw_S*8.617343d-05
-write(*,*) "TS per cell in H:", T*int_dosXw_S*8.617343d-05*ev2Hartrees
-write(*,*) "Zero Point Energy per atom in eV:", int_dosXw_ZP/dfloat(natom)/kbT
-write(*,*) "Zero Point Energy per atom in H:", int_dosXw_ZP/dfloat(natom)/kbT*ev2Hartree
-write(*,*) "Zero Point Energy per cell in eV:", int_dosXw_ZP/kbT
-write(*,*) "Zero Point Energy per cell in H:", int_dosXw_ZP/kbT*ev2Hartree
-write(*,*) "Internal Energy per atom in eV:", int_dosXw_E/dfloat(natom)/kbT CHECK
-write(*,*) "Internal Energy per atom in H:", int_dosXw_E/dfloat(natom)/kbT*ev2Hartree
-write(*,*) "Internal Energy per cell in eV:", int_dosXw_E/kbT
-write(*,*) "Internal Energy per cell in H:", int_dosXw_E/kbT*ev2Hartree
-write(*,*) "Free Energy per atom in eV:", int_dosXw_E/dfloat(natom)/kbT
-write(*,*) "Free Energy per atom in H:", int_dosXw_E/dfloat(natom)/kbT*ev2Hartree
-write(*,*) "Free Energy per cell in eV:", int_dosXw_E/kbT
-write(*,*) "Free Energy per cell in H:", int_dosXw_E/kbT*ev2Hartree
+write(*,*) "Entropy per cell in eV/K:", int_dosXw_S*kBeV
+write(*,*) "Entropy per cell in H/K:", int_dosXw_S*kBeV&
+     &*ev2Hartrees 
+write(*,*) "TS per atom in eV:", T*int_dosXw_S/dfloat(natom)*kBeV
+write(*,*) "TS per atom in H:", T*int_dosXw_S/dfloat(natom)*kBeV*ev2Hartrees 
+write(*,*) "TS per cell in eV:", T*int_dosXw_S*kBeV
+write(*,*) "TS per cell in H:", T*int_dosXw_S*kBeV*ev2Hartrees
+write(*,*) "Zero Point Energy per atom in eV:", kbT*int_dosXw_ZP&
+     &/dfloat(natom) 
+write(*,*) "Zero Point Energy per atom in H:", kbT*int_dosXw_ZP&
+     &/dfloat(natom)*ev2Hartrees 
+write(*,*) "Zero Point Energy per cell in eV:", kbT*int_dosXw_ZP
+write(*,*) "Zero Point Energy per cell in H:", kbT*int_dosXw_ZP*ev2Hartrees
+write(*,*) "Internal Energy per atom in eV:", kbT*int_dosXw_E/dfloat(natom)
+write(*,*) "Internal Energy per atom in H:", kbT*int_dosXw_E&
+     &/dfloat(natom)*ev2Hartrees 
+write(*,*) "Internal Energy per cell in eV:", kbT*int_dosXw_E
+write(*,*) "Internal Energy per cell in H:", kbT*int_dosXw_E*ev2Hartrees
+write(*,*) "Free Energy per atom in eV:", kbT*int_dosXw_E/dfloat(natom)
+write(*,*) "Free Energy per atom in H:", kbT*int_dosXw_E&
+     &/dfloat(natom)*ev2Hartrees 
+write(*,*) "Free Energy per cell in eV:", kbT*int_dosXw_E
+write(*,*) "Free Energy per cell in H:", kbT*int_dosXw_E*ev2Hartrees
 ! quantum corrections to classical MD
-write(*,*)' Quantum corrections to classical MD. H/cell: E, A(H), S '
-write(*,*)int_dosWcor_E*kbT*ev2Hartree,int_dosWcor_A*kbT*ev2Hartree,int_dosWcor_S*8.617343d-05*ev2Hartree
-! Just numbers to file (what for?)
-! write(*,*)&
-! &int_dosXw_S/dfloat(natom),&
-! &int_dosXw_S/dfloat(natom)*8.617343d-05,&
-! &int_dosXw_S/dfloat(natom)*8.617343d-05*ev2Hartrees,&
-! &int_dosXw_S,&
-! &int_dosXw_S*8.617343d-05,&
-! &int_dosXw_S*8.617343d-05*ev2Hartrees,&
-! &T*int_dosXw_S/dfloat(natom)*8.617343d-05,&
-! &T*int_dosXw_S/dfloat(natom)*8.617343d-05*ev2Hart,&
-! &T*int_dosXw_S*8.617343d-05,&
-! &T*int_dosXw_S*8.617343d-05*ev2Hartrees,&
-! &int_dosXw_ZP/dfloat(natom)/kbT,&
-! &int_dosXw_ZP/dfloat(natom)/kbT*ev2Hartree,&
-! &int_dosXw_ZP/kbT,&
-! &int_dosXw_ZP/kbT*ev2Hartree,&
-! &int_dosXw_E/dfloat(natom)/kbT,&
-! &int_dosXw_E/dfloat(natom)/kbT*ev2Hartree,&
-! &int_dosXw_E/kbT,&
-! &int_dosXw_E/kbT*ev2Hartree,&
-! &int_dosXw_E/dfloat(natom)/kbT,&
-! &int_dosXw_E/dfloat(natom)/kbT*ev2Hartree,&
-! &int_dosXw_E/kbT,&
-! &int_dosXw_E/kbT*ev2Hartree
+write(*,*)' Quantum corrections to classical MD. H/cell: E(H), A, S '
+write(*,*)int_dosWcor_E*kbT*ev2Hartrees,int_dosWcor_A*kbT*ev2Hartrees&
+     &,int_dosWcor_S*kBeV*ev2Hartrees 
 
 
 
